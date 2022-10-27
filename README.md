@@ -8,14 +8,22 @@ ToC
 
 # Ethereum - StarkNet communication
 ## Ethereum to StarkNet (L1 - L2)
-- Interact with StarkNet core contract
-- StarkNet sequencer
-- The L1 Handler transaction that was created in the previous step is added to a proof.
-- The state update is received on the Core contract
-- the message is cleared from the Core contract’s storage. At this point the message is handled.
+- a function of StarkNet core contract on Ethereum is called with l2 contract, function selector, payload
+- StarkNet sequencer receipts the payload, initiates a transaction that invokes the correspond contract function. And the follow logics happend on StarkNet contract
+- L1 state update and proof
+  - The L1 Handler transaction that was created in the previous step is added to a proof.
+  - The state update is received on the Core contract
+  - the message is cleared from the Core contract’s storage. At this point the message is handled.
 
 
 ## StarkNet to Ethereum (L2 - L1)
+- Interaction with contract on StarkNet
+- On StarkNet contract, `send_message_to_l1` is called with `to_address` and `payload`
+- When message is consumed
+  - `consumeMessageFromL2` function is called in StarkNet core contract
+  - proof
+
+the hash of the message is stored on L1 in the StarkNet Core Contract (and the relevant counter is increased), and the LogMessageToL1 event (which contains the message parameters) is emitted. are these done by StarkNet OS/sequencer
 
 # [aave-starknet-bridge](https://github.com/aave-starknet-project/aave-starknet-bridge)
 
@@ -99,10 +107,43 @@ func handle_deposit{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_
 ```
 
 ## L2 - L1 withdraw
+To bridge their static_a_tokens back to L1, users initiate a withdrawal on the L2 bridge by calling `initiate_withdraw`
 
-## 
+- The amount of static_a_tokens to withdraw will be burned by L2 bridge.
+- A message will be sent to L1 bridge with L1 aToken address, L1 recipient, L2 rewards index and the amount.
+
+```rust
+@external
+func initiate_withdraw{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+    l2_token: felt, l1_recipient: felt, amount: Uint256, to_underlying_asset: felt
+) {
+  // the message
+  let (message_payload: felt*) = alloc();
+  assert message_payload[0] = WITHDRAW_MESSAGE; //const WITHDRAW_MESSAGE = 2;
+  assert message_payload[1] = l1_token;
+  assert message_payload[2] = caller_address;
+  assert message_payload[3] = l1_recipient;
+  assert message_payload[4] = amount.low;
+  assert message_payload[5] = amount.high;
+  assert message_payload[6] = current_rewards_index.wad.low;
+  assert message_payload[7] = current_rewards_index.wad.high;
+  assert message_payload[8] = to_underlying_asset;
+
+  send_message_to_l1(to_address=to_address, payload_size=9, payload=message_payload);
+  // to_address is L1 bridge contract
+}
+```
+- [`send_message_to_l1` function](https://github.com/starkware-libs/cairo-lang/blob/4e233516f52477ad158bc81a86ec2760471c1b65/src/starkware/starknet/common/messages.cairo)
+- `_consumeMessage` of Bridge.sol will consume the message by calling StarkNet core contract [`consumeMessageFromL2`](https://github.com/starkware-libs/cairo-lang/blob/4e233516f52477ad158bc81a86ec2760471c1b65/src/starkware/starknet/eth/StarknetMessaging.sol#L119)
+  - this is an internal function, called by external function `withdraw`
+  - so the message will only be consumed when `withdraw` is called
+  - 
+
+## L1 - L2 to update L2 state
+`handle_index_update`, called when L1 bridge updateL2State function is called.
+
+## L2 - L1 to receiveRewards
 
 
-
-## References
+# References
 - https://docs.starknet.io/documentation/develop/L1-L2_Communication/messaging-mechanism/
